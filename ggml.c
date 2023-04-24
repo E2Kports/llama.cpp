@@ -2418,6 +2418,62 @@ inline static void ggml_vec_dot_f16(const int n, float * restrict s, ggml_fp16_t
     *s = sumf;
 }
 
+#if defined(__e2k__) && __iset__ >= 5
+static inline __v2di __attribute__((__always_inline__))
+e2k_dot_4_0_8_0_quants(__v2di bx, __v2di by0, __v2di by1)
+{
+    const __v2di lowMask = __builtin_e2k_qppackdl(0x0f0f0f0f0f0f0f0fLL,
+                                                  0x0f0f0f0f0f0f0f0fLL);
+    const __v2di bais = __builtin_e2k_qppackdl(0x0808080808080808LL,
+                                               0x0808080808080808LL);
+    const __v2di ones = __builtin_e2k_qppackdl(0x0001000100010001LL,
+                                               0x0001000100010001LL);
+
+        // Unpack nibbles into individual bytes
+        __v2di bx0 = __builtin_e2k_qpand( bx,  lowMask ); // {HLhl} -> {oLol}
+        __v2di bx1 = __builtin_e2k_qpsrlh( bx, 4 );       // {HLhl} -> {oHLh}
+               bx1 = __builtin_e2k_qpand( bx1, lowMask ); //        -> {oHoh}
+        // The output vectors contains 32 bytes, each one in [ 0 .. 15 ] interval
+
+        // Reorder bytes in "y" block to order in bx0,bx1
+        __v2di lo = __builtin_e2k_qppermb(by1, by0,
+                      __builtin_e2k_qppackdl(0x1e1c1a1816141210LL,
+                                             0x0e0c0a0806040200LL));
+        __v2di hi = __builtin_e2k_qppermb(by1, by0,
+                      __builtin_e2k_qppackdl(0x1f1d1b1917151311LL,
+                                             0x0f0d0b0907050301LL));
+
+        // Get absolute values of "x" vectors:
+        __v2di ax0 = __builtin_e2k_qppermb(bx0 /* not used */,
+                        __builtin_e2k_qppackdl(0x0706050403020100LL,
+                                               0x0102030405060708LL), bx0);
+        __v2di ax1 = __builtin_e2k_qppermb(bx1 /* not used */,
+                        __builtin_e2k_qppackdl(0x0706050403020100LL,
+                                               0x0102030405060708LL), bx1);
+
+        // Move each one in [ -8 .. +7 ] interval:
+        bx0 = __builtin_e2k_qpsubb(bx0, bais);
+        bx1 = __builtin_e2k_qpsubb(bx1, bais);
+
+        // Sign the values of the y vectors
+        __v2di sy0 = __builtin_e2k_qpsignb(lo, bx0);
+        __v2di sy1 = __builtin_e2k_qpsignb(hi, bx1);
+
+        // Perform multiplication and create 16-bit values
+        __v2di dot0 = __builtin_e2k_qpmaddubsh(sy0, ax0);
+        __v2di dot1 = __builtin_e2k_qpmaddubsh(sy1, ax1);
+
+        // Reduce to 8 int16_t (overflow not possible: 8 bit * 4 bit => 12 bit)
+        __v2di dot = __builtin_e2k_qpaddh(dot0, dot1);
+
+        // Reduce to 4 int32_t by integer horizontal sums
+        __v2di xy_int32 = __builtin_e2k_qpmaddh(ones, dot);
+
+        // Convert vector of 4 int32_t to 4 floats
+        return __builtin_e2k_qpistofs(xy_int32);
+}
+#endif
+
 static void ggml_vec_dot_q4_0_q8_0(const int n, float * restrict s, const void * restrict vx, const void * restrict vy) {
     const int nb = n / QK8_0;
 
@@ -2493,6 +2549,187 @@ static void ggml_vec_dot_q4_0_q8_0(const int n, float * restrict s, const void *
     }
 
     *s = vaddvq_f32(sumv0) + vaddvq_f32(sumv1) - 8 * sum8;
+#elif defined(__e2k__) && __iset__ >= 5
+    int i;
+    const __v2di zero = __builtin_e2k_qppackdl(0, 0);
+    // Initialize accumulators with zeros
+    __v2di acc0 = zero;
+    __v2di acc1 = zero;
+    __v2di acc2 = zero;
+    __v2di acc3 = zero;
+
+    // Main loop
+#pragma loop count(1000)
+    for (i = 0; i < (nb - 3); i += 4) {
+        // Load "x" blocks memory lines
+        __v2di xl0 = ((__v2di *)&x[i])[0];
+        __v2di xl1 = ((__v2di *)&x[i])[1];
+        __v2di xl2 = ((__v2di *)&x[i])[2];
+        __v2di xl3 = ((__v2di *)&x[i])[3];
+        __v2di xl4 = ((__v2di *)&x[i])[4];
+
+        // Load "y" blocks memory lines
+        __v2di yl0 = ((__v2di *)&y[i])[0];
+        __v2di yl1 = ((__v2di *)&y[i])[1];
+        __v2di yl2 = ((__v2di *)&y[i])[2];
+        __v2di yl3 = ((__v2di *)&y[i])[3];
+        __v2di yl4 = ((__v2di *)&y[i])[4];
+        __v2di yl5 = ((__v2di *)&y[i])[5];
+        __v2di yl6 = ((__v2di *)&y[i])[6];
+        __v2di yl7 = ((__v2di *)&y[i])[7];
+        __v2di yl8 = ((__v2di *)&y[i])[8];
+        __v2di yl9 = ((__v2di *)&y[i])[9];
+        __v2di yl10 = ((__v2di *)&y[i])[10];
+
+        // Extract Q4_0 quants
+        __v2di bx0 = __builtin_e2k_qppermb(xl1, xl0,
+                       __builtin_e2k_qppackdl(0x131211100f0e0d0cLL,
+                                              0x0b0a090807060504LL));
+        __v2di bx1 = __builtin_e2k_qppermb(xl2, xl1,
+                       __builtin_e2k_qppackdl(0x1716151413121110LL,
+                                              0x0f0e0d0c0b0a0908LL));
+        __v2di bx2 = __builtin_e2k_qppermb(xl3, xl2,
+                       __builtin_e2k_qppackdl(0x1b1a191817161514LL,
+                                              0x131211100f0e0d0cLL));
+        __v2di bx3 = xl4;
+
+        // Extract Q8_0 quants
+        __v2di by0l = __builtin_e2k_qppermb(yl1, yl0,
+                        __builtin_e2k_qppackdl(0x1b1a191817161514LL,
+                                               0x131211100f0e0d0cLL));
+        __v2di by0h = __builtin_e2k_qppermb(yl2, yl1,
+                        __builtin_e2k_qppackdl(0x1b1a191817161514LL,
+                                               0x131211100f0e0d0cLL));
+        __v2di by1l = __builtin_e2k_qppermb(yl4, yl3,
+                        __builtin_e2k_qppackdl(0x1716151413121110LL,
+                                               0x0f0e0d0c0b0a0908LL));
+        __v2di by1h = __builtin_e2k_qppermb(yl5, yl4,
+                        __builtin_e2k_qppackdl(0x1716151413121110LL,
+                                               0x0f0e0d0c0b0a0908LL));
+        __v2di by2l = __builtin_e2k_qppermb(yl7, yl6,
+                        __builtin_e2k_qppackdl(0x131211100f0e0d0cLL,
+                                               0x0b0a090807060504LL));
+        __v2di by2h = __builtin_e2k_qppermb(yl8, yl7,
+                        __builtin_e2k_qppackdl(0x131211100f0e0d0cLL,
+                                               0x0b0a090807060504LL));
+        __v2di by3l = yl9;
+        __v2di by3h = yl10;
+
+        // Mulpilay vectors
+        __v2di xy0 = e2k_dot_4_0_8_0_quants(bx0, by0l, by0h);
+        __v2di xy1 = e2k_dot_4_0_8_0_quants(bx1, by1l, by1h);
+        __v2di xy2 = e2k_dot_4_0_8_0_quants(bx2, by2l, by2h);
+        __v2di xy3 = e2k_dot_4_0_8_0_quants(bx3, by3l, by3h);
+
+        // Compute combined scales for each blocks
+        __v2di ylt = __builtin_e2k_qppermb(yl8, yl2,
+                        __builtin_e2k_qppackdl(0x1716151413121110LL,
+                                               0x0f0e0d0c0b0a0908LL));
+        __v2di d0 = __builtin_e2k_qpfmuls(xl0, yl0);
+        __v2di d1 = __builtin_e2k_qpfmuls(xl1, ylt);
+        __v2di d2 = __builtin_e2k_qpfmuls(xl2, yl5);
+        __v2di d3 = __builtin_e2k_qpfmuls(xl3, ylt);
+
+        d0 = __builtin_e2k_qppermb(d0, d0,
+                __builtin_e2k_qppackdl(0x0302010003020100LL,
+                                       0x0302010003020100LL));
+        d1 = __builtin_e2k_qppermb(d1, d1,
+                __builtin_e2k_qppackdl(0x0706050407060504LL,
+                                       0x0706050407060504LL));
+        d2 = __builtin_e2k_qppermb(d2, d2,
+                __builtin_e2k_qppackdl(0x0b0a09080b0a0908LL,
+                                       0x0b0a09080b0a0908LL));
+        d3  = __builtin_e2k_qppermb(d3, d3,
+                __builtin_e2k_qppackdl(0x0f0e0d0c0f0e0d0cLL,
+                                       0x0f0e0d0c0f0e0d0cLL));
+
+        // Multiply q with scale and accumulate
+#if __iset__ >= 6
+        acc0 = __builtin_e2k_qpfmas(d0, xy0, acc0);
+        acc1 = __builtin_e2k_qpfmas(d1, xy1, acc1);
+        acc2 = __builtin_e2k_qpfmas(d2, xy2, acc2);
+        acc3 = __builtin_e2k_qpfmas(d3, xy3, acc3);
+#else
+        acc0 = __builtin_e2k_qpfadds(__builtin_e2k_qpfmuls(d0, xy0), acc0);
+        acc1 = __builtin_e2k_qpfadds(__builtin_e2k_qpfmuls(d1, xy1), acc1);
+        acc2 = __builtin_e2k_qpfadds(__builtin_e2k_qpfmuls(d2, xy2), acc2);
+        acc3 = __builtin_e2k_qpfadds(__builtin_e2k_qpfmuls(d3, xy3), acc3);
+#endif
+    }
+
+    // possible left pair blocks only
+    if(i < nb) {
+        // Load "x" blocks memory lines
+        __v2di xl0 = ((__v2di *)&x[i])[0];
+        __v2di xl1 = ((__v2di *)&x[i])[1];
+        __v2di xl2 = ((__v2di *)&x[i])[2];
+
+        // Load "y" blocks memory lines
+        __v2di yl0 = ((__v2di *)&y[i])[0];
+        __v2di yl1 = ((__v2di *)&y[i])[1];
+        __v2di yl2 = ((__v2di *)&y[i])[2];
+        __v2di yl3 = ((__v2di *)&y[i])[3];
+        __v2di yl4 = ((__v2di *)&y[i])[4];
+        __v2di yl5 = ((__v2di *)&y[i])[5];
+
+        // Extract Q4_0 quants
+        __v2di bx0 = __builtin_e2k_qppermb(xl1, xl0,
+                       __builtin_e2k_qppackdl(0x131211100f0e0d0cLL,
+                                              0x0b0a090807060504LL));
+        __v2di bx1 = __builtin_e2k_qppermb(xl2, xl1,
+                       __builtin_e2k_qppackdl(0x1716151413121110LL,
+                                              0x0f0e0d0c0b0a0908LL));
+        // Extract Q8_0 quants
+        __v2di by0l = __builtin_e2k_qppermb(yl1, yl0,
+                        __builtin_e2k_qppackdl(0x1b1a191817161514LL,
+                                               0x131211100f0e0d0cLL));
+        __v2di by0h = __builtin_e2k_qppermb(yl2, yl1,
+                        __builtin_e2k_qppackdl(0x1b1a191817161514LL,
+                                               0x131211100f0e0d0cLL));
+        __v2di by1l = __builtin_e2k_qppermb(yl4, yl3,
+                        __builtin_e2k_qppackdl(0x1716151413121110LL,
+                                               0x0f0e0d0c0b0a0908LL));
+        __v2di by1h = __builtin_e2k_qppermb(yl5, yl4,
+                        __builtin_e2k_qppackdl(0x1716151413121110LL,
+                                               0x0f0e0d0c0b0a0908LL));
+        // Mulpilay vectors
+        __v2di xy0 = e2k_dot_4_0_8_0_quants(bx0, by0l, by0h);
+        __v2di xy1 = e2k_dot_4_0_8_0_quants(bx1, by1l, by1h);
+
+        // Compute combined scales for each blocks
+        __v2di ylt = __builtin_e2k_qppermb(yl2, yl2,
+                        __builtin_e2k_qppackdl(0x1716151413121110LL,
+                                               0x0f0e0d0c0b0a0908LL));
+        __v2di d0 = __builtin_e2k_qpfmuls(xl0, yl0);
+        __v2di d1 = __builtin_e2k_qpfmuls(xl1, ylt);
+
+        d0 = __builtin_e2k_qppermb(d0, d0,
+                __builtin_e2k_qppackdl(0x0302010003020100LL,
+                                       0x0302010003020100LL));
+        d1 = __builtin_e2k_qppermb(d1, d1,
+                __builtin_e2k_qppackdl(0x0706050407060504LL,
+                                       0x0706050407060504LL));
+
+        // Multiply q with scale and accumulate
+#if __iset__ >= 6
+        acc0 = __builtin_e2k_qpfmas(d0, xy0, acc0);
+        acc1 = __builtin_e2k_qpfmas(d1, xy1, acc1);
+#else
+        acc0 = __builtin_e2k_qpfadds(__builtin_e2k_qpfmuls(d0, xy0), acc0);
+        acc1 = __builtin_e2k_qpfadds(__builtin_e2k_qpfmuls(d1, xy1), acc1);
+#endif
+    }
+
+    // Reduce accumulators to one
+    acc0 = __builtin_e2k_qpfadds(acc0, acc1);
+    acc1 = __builtin_e2k_qpfadds(acc2, acc3);
+    acc0 = __builtin_e2k_qpfadds(acc0, acc1);
+
+    // Return horizontal sum of the acc vector
+    type_union_128 convertor;
+    convertor.__v2di = __builtin_e2k_qpfhadds(__builtin_e2k_qpfhadds(acc0, zero), zero);
+    *s = convertor.f.f0;
+
 #elif defined(__AVX2__)
     // Initialize accumulator with zeros
     __m256 acc = _mm256_setzero_ps();
