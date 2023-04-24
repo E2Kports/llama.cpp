@@ -2442,7 +2442,14 @@ e2k_dot_4_0_8_0_quants(__v2di bx, __v2di by0, __v2di by1)
         __v2di hi = __builtin_e2k_qppermb(by1, by0,
                       __builtin_e2k_qppackdl(0x1f1d1b1917151311LL,
                                              0x0f0d0b0907050301LL));
+#if __iset__ >= 7
+        // Move each one in [ -8 .. +7 ] interval:
+        bx0 = __builtin_e2k_qpsubb(bx0, bais);
+        bx1 = __builtin_e2k_qpsubb(bx1, bais);
 
+        __v2di xy_int32 = __builtin_e2k_qpidotsbwss(bx0, lo, __builtin_e2k_qppackdl(0, 0));
+               xy_int32 = __builtin_e2k_qpidotsbwss(bx1, hi, xy_int32);
+#else
         // Get absolute values of "x" vectors:
         __v2di ax0 = __builtin_e2k_qppermb(bx0 /* not used */,
                         __builtin_e2k_qppackdl(0x0706050403020100LL,
@@ -2468,6 +2475,7 @@ e2k_dot_4_0_8_0_quants(__v2di bx, __v2di by0, __v2di by1)
 
         // Reduce to 4 int32_t by integer horizontal sums
         __v2di xy_int32 = __builtin_e2k_qpmaddh(ones, dot);
+#endif
 
         // Convert vector of 4 int32_t to 4 floats
         return __builtin_e2k_qpistofs(xy_int32);
