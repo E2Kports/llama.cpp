@@ -2630,26 +2630,35 @@ static void ggml_vec_dot_q4_0_q8_0(const int n, float * restrict s, const void *
         __v2di xy3 = e2k_dot_4_0_8_0_quants(bx3, by3l, by3h);
 
         // Compute combined scales for each blocks
-        __v2di ylt = __builtin_e2k_qppermb(yl8, yl2,
-                        __builtin_e2k_qppackdl(0x1716151413121110LL,
-                                               0x0f0e0d0c0b0a0908LL));
-        __v2di d0 = __builtin_e2k_qpfmuls(xl0, yl0);
-        __v2di d1 = __builtin_e2k_qpfmuls(xl1, ylt);
-        __v2di d2 = __builtin_e2k_qpfmuls(xl2, yl5);
-        __v2di d3 = __builtin_e2k_qpfmuls(xl3, ylt);
+        __v2di xla = __builtin_e2k_qppermb(xl1, xl0,
+                        __builtin_e2k_qppackdl(0x8080808080808080LL,
+                                               0x1716151403020100LL));
+        __v2di xlb = __builtin_e2k_qppermb(xl3, xl2,
+                        __builtin_e2k_qppackdl(0x8080808080808080LL,
+                                               0x1f1e1d1c0b0a0908LL));
 
-        d0 = __builtin_e2k_qppermb(d0, d0,
-                __builtin_e2k_qppackdl(0x0302010003020100LL,
-                                       0x0302010003020100LL));
-        d1 = __builtin_e2k_qppermb(d1, d1,
-                __builtin_e2k_qppackdl(0x0706050407060504LL,
-                                       0x0706050407060504LL));
-        d2 = __builtin_e2k_qppermb(d2, d2,
-                __builtin_e2k_qppackdl(0x0b0a09080b0a0908LL,
-                                       0x0b0a09080b0a0908LL));
-        d3  = __builtin_e2k_qppermb(d3, d3,
-                __builtin_e2k_qppackdl(0x0f0e0d0c0f0e0d0cLL,
-                                       0x0f0e0d0c0f0e0d0cLL));
+        __v2di yla = __builtin_e2k_qppermb(yl2, yl0,
+                        __builtin_e2k_qppackdl(0x8080808080808080LL,
+                                               0x1f1e1d1c03020100LL));
+        __v2di ylb = __builtin_e2k_qppermb(yl8, yl5,
+                        __builtin_e2k_qppackdl(0x8080808080808080LL,
+                                               0x171615140b0a0908));
+
+        __v2di d0_1 = __builtin_e2k_qpfmuls(xla, yla);
+        __v2di d2_3 = __builtin_e2k_qpfmuls(xlb, ylb);
+
+        __v2di d0 = __builtin_e2k_qppermb(d0_1, d0_1,
+                         __builtin_e2k_qppackdl(0x0302010003020100LL,
+                                                0x0302010003020100LL));
+        __v2di d1 = __builtin_e2k_qppermb(d0_1, d0_1,
+                         __builtin_e2k_qppackdl(0x0706050407060504LL,
+                                                0x0706050407060504LL));
+        __v2di d2 = __builtin_e2k_qppermb(d2_3, d2_3,
+                         __builtin_e2k_qppackdl(0x0302010003020100LL,
+                                                0x0302010003020100LL));
+        __v2di d3  = __builtin_e2k_qppermb(d2_3, d2_3,
+                         __builtin_e2k_qppackdl(0x0706050407060504LL,
+                                                0x0706050407060504LL));
 
         // Multiply q with scale and accumulate
 #if __iset__ >= 6
@@ -2705,18 +2714,21 @@ static void ggml_vec_dot_q4_0_q8_0(const int n, float * restrict s, const void *
         __v2di xy1 = e2k_dot_4_0_8_0_quants(bx1, by1l, by1h);
 
         // Compute combined scales for each blocks
-        __v2di ylt = __builtin_e2k_qppermb(yl2, yl2,
-                        __builtin_e2k_qppackdl(0x1716151413121110LL,
-                                               0x0f0e0d0c0b0a0908LL));
-        __v2di d0 = __builtin_e2k_qpfmuls(xl0, yl0);
-        __v2di d1 = __builtin_e2k_qpfmuls(xl1, ylt);
+        __v2di xla = __builtin_e2k_qppermb(xl1, xl0,
+                        __builtin_e2k_qppackdl(0x8080808080808080LL,
+                                               0x1716151403020100LL));
+        __v2di yla = __builtin_e2k_qppermb(yl2, yl0,
+                        __builtin_e2k_qppackdl(0x8080808080808080LL,
+                                               0x1f1e1d1c03020100LL));
 
-        d0 = __builtin_e2k_qppermb(d0, d0,
-                __builtin_e2k_qppackdl(0x0302010003020100LL,
-                                       0x0302010003020100LL));
-        d1 = __builtin_e2k_qppermb(d1, d1,
-                __builtin_e2k_qppackdl(0x0706050407060504LL,
-                                       0x0706050407060504LL));
+        __v2di d0_1 = __builtin_e2k_qpfmuls(xla, yla);
+
+        __v2di d0 = __builtin_e2k_qppermb(d0_1, d0_1,
+                         __builtin_e2k_qppackdl(0x0302010003020100LL,
+                                                0x0302010003020100LL));
+        __v2di d1 = __builtin_e2k_qppermb(d0_1, d0_1,
+                         __builtin_e2k_qppackdl(0x0706050407060504LL,
+                                                0x0706050407060504LL));
 
         // Multiply q with scale and accumulate
 #if __iset__ >= 6
