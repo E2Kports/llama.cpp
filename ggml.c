@@ -2442,33 +2442,25 @@ e2k_dot_4_0_8_0_quants(__v2di bx, __v2di by0, __v2di by1)
         __v2di hi = __builtin_e2k_qppermb(by1, by0,
                       __builtin_e2k_qppackdl(0x1f1d1b1917151311LL,
                                              0x0f0d0b0907050301LL));
-#if __iset__ >= 7
+
         // Move each one in [ -8 .. +7 ] interval:
         bx0 = __builtin_e2k_qpsubb(bx0, bais);
         bx1 = __builtin_e2k_qpsubb(bx1, bais);
-
+#if __iset__ >= 7
         __v2di xy_int32 = __builtin_e2k_qpidotsbwss(bx0, lo, __builtin_e2k_qppackdl(0, 0));
                xy_int32 = __builtin_e2k_qpidotsbwss(bx1, hi, xy_int32);
 #else
         // Get absolute values of "x" vectors:
-        __v2di ax0 = __builtin_e2k_qppermb(bx0 /* not used */,
-                        __builtin_e2k_qppackdl(0x0706050403020100LL,
-                                               0x0102030405060708LL), bx0);
-        __v2di ax1 = __builtin_e2k_qppermb(bx1 /* not used */,
-                        __builtin_e2k_qppackdl(0x0706050403020100LL,
-                                               0x0102030405060708LL), bx1);
-
-        // Move each one in [ -8 .. +7 ] interval:
-        bx0 = __builtin_e2k_qpsubb(bx0, bais);
-        bx1 = __builtin_e2k_qpsubb(bx1, bais);
+        __v2di ay0 = __builtin_e2k_qpsignb(lo, lo);
+        __v2di ay1 = __builtin_e2k_qpsignb(hi, hi);
 
         // Sign the values of the y vectors
-        __v2di sy0 = __builtin_e2k_qpsignb(lo, bx0);
-        __v2di sy1 = __builtin_e2k_qpsignb(hi, bx1);
+        __v2di sx0 = __builtin_e2k_qpsignb(bx0, lo);
+        __v2di sx1 = __builtin_e2k_qpsignb(bx1, hi);
 
         // Perform multiplication and create 16-bit values
-        __v2di dot0 = __builtin_e2k_qpmaddubsh(sy0, ax0);
-        __v2di dot1 = __builtin_e2k_qpmaddubsh(sy1, ax1);
+        __v2di dot0 = __builtin_e2k_qpmaddubsh(sx0, ay0);
+        __v2di dot1 = __builtin_e2k_qpmaddubsh(sx1, ay1);
 
         // Reduce to 8 int16_t (overflow not possible: 8 bit * 4 bit => 12 bit)
         __v2di dot = __builtin_e2k_qpaddh(dot0, dot1);
